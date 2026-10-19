@@ -20,6 +20,7 @@ const ALLOWED_TYPE_SET = new Set(ALLOWED_TYPES);
 
 /** 规范 §8 的工程限额（首版阈值）。 */
 export const LIMITS = Object.freeze({
+  maxPayloadBytes: 64 * 1024,
   maxNodes: 120,
   maxDepth: 8,
   maxStateKeys: 60,
@@ -37,6 +38,18 @@ export function validateUi(ui) {
   if (ui === null || typeof ui !== 'object' || Array.isArray(ui)) {
     return { ok: false, error: 'ui must be an object' };
   }
+  let serialized;
+  try {
+    serialized = JSON.stringify(ui);
+  } catch {
+    return { ok: false, error: 'ui must contain only JSON-compatible values' };
+  }
+  if (typeof serialized !== 'string') {
+    return { ok: false, error: 'ui must contain only JSON-compatible values' };
+  }
+  if (new TextEncoder().encode(serialized).byteLength > LIMITS.maxPayloadBytes) {
+    return { ok: false, error: `ui payload exceeds ${LIMITS.maxPayloadBytes} bytes` };
+  }
   if (ui.schemaVersion !== 'chat-ui/1.0') {
     return { ok: false, error: `unsupported schemaVersion: ${String(ui.schemaVersion)}` };
   }
@@ -45,6 +58,7 @@ export function validateUi(ui) {
   }
 
   const seenIds = new Set();
+  const referencedActionIds = new Set();
   let nodeCount = 0;
   let failure = null;
 
@@ -90,6 +104,7 @@ export function validateUi(ui) {
       failure = `node "${node.id}" has an invalid actionId`;
       return;
     }
+    if (typeof node.actionId === 'string') referencedActionIds.add(node.actionId);
     if (node.props !== undefined) {
       if (node.props === null || typeof node.props !== 'object' || Array.isArray(node.props)) {
         failure = `node "${node.id}" props must be an object`;
@@ -130,8 +145,11 @@ export function validateUi(ui) {
     return { ok: false, error: `actions exceed ${LIMITS.maxActions} entries` };
   }
 
-  const normalizedActions = {};
+  const normalizedActions = Object.create(null);
   for (const [actionId, action] of actionEntries) {
+    if (actionId === '' || actionId.length > 128) {
+      return { ok: false, error: 'action ids must contain 1 to 128 characters' };
+    }
     if (action === null || typeof action !== 'object' || Array.isArray(action)) {
       return { ok: false, error: `action "${actionId}" must be an object` };
     }
@@ -160,6 +178,12 @@ export function validateUi(ui) {
       operation: action.operation,
       includeKeys: [...includeKeys],
     };
+  }
+
+  for (const actionId of referencedActionIds) {
+    if (!Object.hasOwn(normalizedActions, actionId)) {
+      return { ok: false, error: `node references an unregistered action: ${actionId}` };
+    }
   }
 
   return {

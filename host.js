@@ -34,6 +34,7 @@ export const inject = ['tools'];
 
 /** 单次上报的最大字节数，防止一个坏客户端把路由打爆。 */
 const MAX_BODY_BYTES = 64 * 1024;
+const MAX_TITLE_CHARS = 256;
 
 let messageSeq = 0;
 
@@ -176,6 +177,9 @@ export function apply(ctx, config = {}) {
     },
 
     async execute(args) {
+      if (args?.title !== undefined && (typeof args.title !== 'string' || args.title.length > MAX_TITLE_CHARS)) {
+        return { ok: false, error: `title must be a string of at most ${MAX_TITLE_CHARS} characters` };
+      }
       const result = validateUi(args?.ui);
       if (!result.ok) return { ok: false, error: result.error };
       return { ok: true, ui: result.ui };
@@ -218,19 +222,28 @@ export function apply(ctx, config = {}) {
     }
 
     const connection = ctx.get('connection');
-    const allowed = (req) =>
-      typeof connection?.requestRejection === 'function' ? connection.requestRejection(req) === undefined : true;
+    const hasOriginGuard = typeof connection?.requestRejection === 'function';
+    const allowed = (req) => hasOriginGuard && connection.requestRejection(req) === undefined;
 
     return webServer.register({
       kind: 'exact',
       path: ACTION_PATH,
       handler: async (req, res) => {
+        if (!hasOriginGuard) {
+          sendJson(res, 503, { ok: false, error: 'same-origin guard unavailable' });
+          return;
+        }
         if (!allowed(req)) {
           sendJson(res, 403, { ok: false, error: 'forbidden' });
           return;
         }
         if (req.method !== 'POST') {
           sendJson(res, 405, { ok: false, error: 'method not allowed' });
+          return;
+        }
+        const contentType = req.headers?.['content-type'];
+        if (typeof contentType !== 'string' || !contentType.toLowerCase().startsWith('application/json')) {
+          sendJson(res, 415, { ok: false, error: 'application/json required' });
           return;
         }
 
@@ -242,15 +255,20 @@ export function apply(ctx, config = {}) {
           return;
         }
 
-        const actionId = typeof body?.actionId === 'string' ? body.actionId : '';
-        if (actionId === '') {
-          sendJson(res, 400, { ok: false, error: 'actionId is required' });
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          sendJson(res, 400, { ok: false, error: 'JSON body must be an object' });
+          return;
+        }
+
+        const actionId = typeof body.actionId === 'string' ? body.actionId : '';
+        if (actionId === '' || actionId.length > 128) {
+          sendJson(res, 400, { ok: false, error: 'actionId must contain 1 to 128 characters' });
           return;
         }
 
         const agents = ctx.get('agents');
-        const sessionId = body?.sessionId;
-        const agent = (sessionId && agents?.get?.(sessionId)) ?? agents?.currentInitiator?.();
+        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
+        const agent = sessionId === '' ? agents?.currentInitiator?.() : agents?.get?.(sessionId);
         if (!agent) {
           sendJson(res, 409, { ok: false, error: 'no live agent for this session' });
           return;
@@ -263,7 +281,13 @@ export function apply(ctx, config = {}) {
         });
 
         if (settings.echoPrompt) {
-          agent.followup(createUserTextMessage(prompt));
+          try {
+            await agent.followup(createUserTextMessage(prompt));
+          } catch (error) {
+            ctx.logger?.('dsh-tool-cards')?.warn?.('failed to submit card action', error);
+            sendJson(res, 502, { ok: false, error: 'failed to submit card action' });
+            return;
+          }
         }
 
         sendJson(res, 200, { ok: true });

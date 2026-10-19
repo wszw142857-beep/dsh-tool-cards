@@ -104,7 +104,6 @@ Action 类型：`submitToAgent`、`callTool`、`openUrl`（仅 http/https）。
 
 - 提交按钮是卡片**唯一的出口**：全宽、加粗、上方有分隔线。
 - 按钮文案描述**用户的下一个动作**，由模型按当前任务决定——"应用这组参数""计算推荐投加量""提交这次配比"。
-- 文案不得出现"让 AI"/"AI 分析"/"问模型"，也不得解释实现（"本地计算"/"不请求大模型"）。用户看到的是产品界面，不是技术说明。
 
 ### 限制
 
@@ -248,8 +247,6 @@ Action kinds: `submitToAgent`, `callTool`, `openUrl` (http/https only).
 - The submit button is the card's **only** exit: full-width, bold, separated by a rule above it.
 - Button labels describe **the user's next action**, decided by the model for the task at hand —
   "应用这组参数", "计算推荐投加量", "提交这次配比".
-- Labels must not say "让 AI" / "AI 分析" / "问模型", and must not explain the implementation
-  ("本地计算" / "不请求大模型"). The user is looking at a product surface, not at a technical note.
 
 ### Limits
 

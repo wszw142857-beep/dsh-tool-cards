@@ -1,0 +1,8 @@
+node_modules/
+package-lock.json
+dist-preview/
+src/
+tools/
+build-client.mjs
+.gitignore
+*.log

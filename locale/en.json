@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Tool Cards",
+    "description": "Renders sliders, selects, forms, charts and tables from a tool result inside an assistant reply, with a submit action that flows back to the agent."
+  }
+}

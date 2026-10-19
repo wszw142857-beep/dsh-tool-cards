@@ -1,0 +1,119 @@
+{
+  "title": "药剂投加量计算器",
+  "ui": {
+    "schemaVersion": "chat-ui/1.0",
+    "initialState": {
+      "soilTons": 1000,
+      "doseGPerKg": 2,
+      "tech": "ISCO"
+    },
+    "tree": {
+      "id": "dose-card",
+      "type": "Card",
+      "props": {
+        "title": "药剂投加量互动计算卡",
+        "subtitle": "调整参数即时估算"
+      },
+      "children": [
+        {
+          "id": "soil",
+          "type": "Input",
+          "label": "土壤质量 (t)",
+          "bind": "soilTons",
+          "props": {
+            "inputType": "number",
+            "min": 0,
+            "step": 1
+          }
+        },
+        {
+          "id": "dose",
+          "type": "Slider",
+          "label": "投加量 (g/kg)",
+          "bind": "doseGPerKg",
+          "props": {
+            "min": 0.1,
+            "max": 5,
+            "step": 0.1,
+            "unit": "g/kg"
+          }
+        },
+        {
+          "id": "tech",
+          "type": "Select",
+          "label": "修复工艺",
+          "bind": "tech",
+          "props": {
+            "options": [
+              {
+                "label": "原位化学氧化",
+                "value": "ISCO"
+              },
+              {
+                "label": "原位化学还原",
+                "value": "ISCR"
+              }
+            ]
+          }
+        },
+        {
+          "id": "total",
+          "type": "Metric",
+          "label": "理论药剂质量 (t)",
+          "value": {
+            "op": "round",
+            "args": [
+              {
+                "op": "div",
+                "args": [
+                  {
+                    "op": "mul",
+                    "args": [
+                      {
+                        "var": "soilTons"
+                      },
+                      {
+                        "var": "doseGPerKg"
+                      }
+                    ]
+                  },
+                  1000
+                ]
+              },
+              3
+            ]
+          },
+          "props": {
+            "unit": "t",
+            "precision": 3
+          }
+        },
+        {
+          "id": "hint-divider",
+          "type": "Divider",
+          "props": {}
+        },
+        {
+          "id": "analyse",
+          "type": "Button",
+          "label": "提交这次配比",
+          "props": {
+            "variant": "primary"
+          },
+          "actionId": "analyseDose"
+        }
+      ]
+    },
+    "actions": {
+      "analyseDose": {
+        "kind": "submitToAgent",
+        "operation": "analyse-remediation-dose",
+        "includeKeys": [
+          "soilTons",
+          "doseGPerKg",
+          "tech"
+        ]
+      }
+    }
+  }
+}

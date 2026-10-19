@@ -1,5 +1,142 @@
 # dsh-tool-cards
 
+[中文](#中文) | [English](#english)
+
+## 中文
+
+**为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 提供交互式聊天卡片。**
+
+在一条助手消息内直接渲染滑块、下拉、分段控件、日期选择器、表单、图表和表格——用户按下提交按钮后，参数快照会作为新消息回传给智能体。
+
+> [!NOTE]
+> 这是 `chat-ui/1.0` 消息格式的独立实现，不是任何官方 ChatGPT 协议，也不复现任何私有实现。
+
+### 它做什么
+
+```
+模型调用 chat_ui({ title, ui })
+  → host 校验载荷（组件白名单、深度、节点数、action 形状）
+  → 工具结果 meta 携带 { kind: 'chat-ui/1.0', title, ui }
+  → 卡片被"提升"为最终聊天输出（不折叠进工具过程）
+      拖动 / 勾选 / 输入 → 仅本地状态，零请求
+      按下提交按钮   → POST /chat-ui/action { actionId, operation, values }
+  → host 通过 agent.followup() 把它变成一条用户消息
+  → 智能体在下一轮看到参数快照
+```
+
+### 为什么卡片要被"提升"
+
+`chat_ui` 是一次工具调用，而工具结果通常属于 *process* 区段——模型思考结束后 DSH 会把这一段折叠起来，卡片也会跟着消失。所以 client 端注册了一个由 `tool/result` 事件驱动的自定义聊天节点（`chat-ui-card`），锚定到会话输出流上；工具行则降级为一行占位符加一个原始数据展开。
+
+如果 `uiConversation` 不可用，插件会回退为在工具行内渲染卡片，功能仍然可用。
+
+### 组件
+
+共 26 种注册组件：
+
+| 分组 | 类型 |
+|---|---|
+| 输入 | `Slider` `Checkbox` `Radio` `Select` `Segmented` `Input` `Textarea` `Date` `Button` |
+| 容器 | `Form` `Pressable` `Popover` `Carousel` |
+| 视觉 | `Chart`（柱/线/饼/散点）`Map` |
+| 展示 | `Card` `Metric` `Text` `Heading` `Row` `Column` `Divider` `Badge` `Alert` `Table` `KeyValue` |
+
+表达式使用白名单 JSON AST——`{ op: "mul", args: [{ var: "a" }, { var: "b" }] }`，支持 `add`/`sub`/`mul`/`div`/`round`/`eq`/`and`/`or`/`not`。**没有 eval，不生成代码。**
+
+### 安装
+
+```bash
+# 在你的 DSH profile 里
+dsh plugin add dsh-tool-cards
+```
+
+或在 `~/.dsh/profiles/<profile>/package.json` 中手动加入 bundle 行：
+
+```json
+{ "dsh": { "profile": { "bundles": ["...", "dsh-tool-cards"] } } }
+```
+
+然后重启 DSH（profile patch 在启动时读取）。
+
+### 用法
+
+`chat_ui` 工具会出现在模型的工具集里。它的描述告诉模型何时使用它（调参数、多维对比、"给我做个计算器"），何时不该用（纯解释、一次性结论）。
+
+最小载荷示例：
+
+```json
+{
+  "title": "药剂投加量计算器",
+  "ui": {
+    "schemaVersion": "chat-ui/1.0",
+    "initialState": { "soilTons": 1000, "doseGPerKg": 2 },
+    "tree": {
+      "id": "root",
+      "type": "Card",
+      "props": { "title": "药剂投加量" },
+      "children": [
+        { "id": "soil", "type": "Input", "label": "土壤质量 (t)", "bind": "soilTons",
+          "props": { "inputType": "number", "min": 0 } },
+        { "id": "dose", "type": "Slider", "label": "投加量 (g/kg)", "bind": "doseGPerKg",
+          "props": { "min": 0.1, "max": 5, "step": 0.1 } },
+        { "id": "total", "type": "Metric", "label": "理论药剂质量", "props": { "unit": "t" },
+          "value": { "op": "round", "args": [
+            { "op": "div", "args": [
+              { "op": "mul", "args": [{ "var": "soilTons" }, { "var": "doseGPerKg" }] }, 1000
+            ] }, 3 ] } },
+        { "id": "submit", "type": "Button", "label": "提交这次配比", "actionId": "apply" }
+      ]
+    },
+    "actions": {
+      "apply": {
+        "kind": "submitToAgent",
+        "operation": "apply-dose",
+        "includeKeys": ["soilTons", "doseGPerKg"]
+      }
+    }
+  }
+}
+```
+
+Action 类型：`submitToAgent`、`callTool`、`openUrl`（仅 http/https）。
+
+### 按钮与文案约定
+
+- 提交按钮是卡片**唯一的出口**：全宽、加粗、上方有分隔线。
+- 按钮文案描述**用户的下一个动作**，由模型按当前任务决定——"应用这组参数""计算推荐投加量""提交这次配比"。
+- 文案不得出现"让 AI"/"AI 分析"/"问模型"，也不得解释实现（"本地计算"/"不请求大模型"）。用户看到的是产品界面，不是技术说明。
+
+### 限制
+
+每条消息：≤ 120 个节点，树深度 ≤ 8，≤ 60 个状态键，≤ 20 个 action，文本 ≤ 4000 字符。由 host 强制执行，畸形载荷在到达 client 前就会被拒绝。
+
+### 说明与注意事项
+
+- `Chart` 和 `Map` 是手绘 SVG。`Map` 只做坐标投影示意，不连接任何瓦片服务。
+- client bundle 将 `react` 保持为 external（由 host 提供），内联了 `@json-render/*` 和 `zod`，因为它们不在平台模块基线里。
+- 样式只使用 `--dsw-alias-*` 主题 token，自动跟随亮/暗主题。
+
+### 开发
+
+```bash
+git clone https://github.com/wszw142857-beep/dsh-tool-cards
+cd dsh-tool-cards
+npm install
+npm run build     # 重新生成 src/card-css.js 和 lib/client.js
+npm run check     # protocol + bundle 自测
+```
+
+更多测试工具在 `tools/`（不随 npm tarball 发布）：
+
+| 脚本 | 用途 |
+|---|---|
+| `tools/selftest.mjs` | 15 项检查：协议校验、bundle 导出面、提升机制、回归防护 |
+| `tools/bundle-rehearsal.mjs` | 10 项检查：在 static-plugin 上下文中运行 `apply()`，含/不含 `uiConversation` |
+| `tools/e2e-full.mjs` | 全链路：真实工具定义 → 事件定义 → 真实 React 渲染 → 拖动 → 提交 |
+| `tools/preview.mjs` | 渲染真实 bundle 并输出可直接截图的页面 |
+
+## English
+
 **Interactive chat cards for [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness).**
 
 Render sliders, selects, segmented controls, date pickers, forms, charts and tables **inside an
@@ -10,7 +147,7 @@ presses the submit button.
 > This is a standalone implementation of the `chat-ui/1.0` message format. It is not an official
 > ChatGPT protocol and does not reproduce any private implementation.
 
-## What it does
+### What it does
 
 ```
 model calls chat_ui({ title, ui })
@@ -33,7 +170,7 @@ output stream. The tool row degrades to a one-line placeholder plus a raw-data d
 If `uiConversation` is unavailable, the plugin falls back to rendering the card inside the tool row,
 so the feature still works.
 
-## Components
+### Components
 
 26 registered component types:
 
@@ -47,7 +184,7 @@ so the feature still works.
 Expressions use a whitelisted JSON AST — `{ op: "mul", args: [{ var: "a" }, { var: "b" }] }` with
 `add`/`sub`/`mul`/`div`/`round`/`eq`/`and`/`or`/`not`. **No eval, no generated code.**
 
-## Install
+### Install
 
 ```bash
 # in your DSH profile
@@ -62,7 +199,7 @@ Or add the bundle row yourself in `~/.dsh/profiles/<profile>/package.json`:
 
 Then restart DSH (a profile patch is read at startup).
 
-## Usage
+### Usage
 
 The `chat_ui` tool appears in the model's tool set. Its description tells the model when to reach
 for it (parameter tuning, multi-dimensional comparison, "build me a calculator") and when not to
@@ -106,7 +243,7 @@ A minimal payload:
 
 Action kinds: `submitToAgent`, `callTool`, `openUrl` (http/https only).
 
-## Button and copy conventions
+### Button and copy conventions
 
 - The submit button is the card's **only** exit: full-width, bold, separated by a rule above it.
 - Button labels describe **the user's next action**, decided by the model for the task at hand —
@@ -114,12 +251,12 @@ Action kinds: `submitToAgent`, `callTool`, `openUrl` (http/https only).
 - Labels must not say "让 AI" / "AI 分析" / "问模型", and must not explain the implementation
   ("本地计算" / "不请求大模型"). The user is looking at a product surface, not at a technical note.
 
-## Limits
+### Limits
 
 Per message: ≤ 120 nodes, tree depth ≤ 8, ≤ 60 state keys, ≤ 20 actions, ≤ 4000-char text.
 Enforced on the host, so a malformed payload is rejected before it reaches the client.
 
-## Notes and caveats
+### Notes and caveats
 
 - `Chart` and `Map` are hand-drawn SVG. `Map` projects coordinates only for illustration and does
   not connect to any tile service.
@@ -127,7 +264,7 @@ Enforced on the host, so a malformed payload is rejected before it reaches the c
   and `zod`, because those are not on the platform module baseline.
 - Styling uses only `--dsw-alias-*` theme tokens, so it follows light/dark automatically.
 
-## Development
+### Development
 
 ```bash
 git clone https://github.com/wszw142857-beep/dsh-tool-cards

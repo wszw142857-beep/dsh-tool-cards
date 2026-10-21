@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-cards",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Interactive cards for DeepSeek Harness replies, rendered from a tool result: sliders, selects, forms, charts and tables, with a submit action that flows back to the agent as a real user message.",
   "main": "index.js",
@@ -72,6 +72,7 @@
   "keywords": [
     "dsh",
     "deepseek-harness",
+    "dsh-plugin",
     "plugin",
     "chat-ui",
     "interactive",

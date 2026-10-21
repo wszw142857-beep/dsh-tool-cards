@@ -47,7 +47,7 @@
 
 ```bash
 # 在你的 DSH profile 里
-dsh plugin add dsh-tool-cards
+dsh plugin --profile web add dsh-tool-cards
 ```
 
 或在 `~/.dsh/profiles/<profile>/package.json` 中手动加入 bundle 行：
@@ -169,9 +169,6 @@ output stream. The tool row degrades to a one-line placeholder plus a raw-data d
 If `uiConversation` is unavailable, the plugin falls back to rendering the card inside the tool row,
 so the feature still works.
 
-<<<<<<< HEAD
-### Components
-=======
 ### Action ownership (security)
 
 The client **never** says which session an action belongs to. At execute time the host records
@@ -186,8 +183,7 @@ the token's own session, released session → 409.
 If the host cannot determine the owner session, the tool issues no token and the card renders
 read-only — it never guesses a target.
 
-## Components
->>>>>>> 0b92eff (feat: 0.2.0 — state persistence, error isolation, i18n)
+### Components
 
 26 registered component types:
 
@@ -205,7 +201,7 @@ Expressions use a whitelisted JSON AST — `{ op: "mul", args: [{ var: "a" }, { 
 
 ```bash
 # in your DSH profile
-dsh plugin add dsh-tool-cards
+dsh plugin --profile web add dsh-tool-cards
 ```
 
 Or add the bundle row yourself in `~/.dsh/profiles/<profile>/package.json`:
@@ -279,9 +275,6 @@ Enforced on the host, so a malformed payload is rejected before it reaches the c
   and `zod`, because those are not on the platform module baseline.
 - Styling uses only `--dsw-alias-*` theme tokens, so it follows light/dark automatically.
 
-<<<<<<< HEAD
-### Development
-=======
 ### Failure isolation
 
 Card content is model-generated, so any single card can be malformed. Every render entry
@@ -307,8 +300,7 @@ Card chrome — submit, close, retry, empty states, validation messages, the map
 follows `ctx.locale` and updates live when the language changes. Business copy (card titles,
 field labels) is authored by the model in the conversation's language and is never translated.
 
-## Development
->>>>>>> 0b92eff (feat: 0.2.0 — state persistence, error isolation, i18n)
+### Development
 
 ```bash
 git clone https://github.com/wszw142857-beep/dsh-tool-cards

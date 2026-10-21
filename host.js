@@ -29,6 +29,9 @@ export { TOOL_NAME, validateUi, formatActionPrompt };
 /** 卡片动作的上报路径。 */
 export const ACTION_PATH = '/chat-ui/action';
 
+/** 卡片状态的读写路径。 */
+export const STATE_PATH = '/chat-ui/state';
+
 /** 插件激活所需的硬依赖。 */
 export const inject = ['tools'];
 
@@ -51,6 +54,116 @@ function createUserTextMessage(text) {
     content: Object.freeze([Object.freeze({ type: 'text', text })]),
     source: Object.freeze({ kind: 'user' }),
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * 卡片归属凭证
+ *
+ * 安全模型：客户端**不能**指定「把动作写进哪个会话」。
+ *
+ * 早期实现直接信任 body.sessionId 并 `agents.get(sessionId)`，
+ * 任何持有同源凭据的页面都能替任意会话注入一条 user 消息——这是越权。
+ *
+ * 现在改为：工具执行时由宿主记下「这张卡片属于哪个会话」，
+ * 返回给客户端的是一个不透明 token；动作回来时只认 token。
+ * 客户端既猜不出别人的 token，也无法把动作指向别的会话。
+ *
+ * 生命周期：token 随卡片存活而保留（会话可能被重新打开），
+ * 用 LRU 上限防止无限增长；会话被释放后 token 自动失效。
+ * ------------------------------------------------------------------ */
+
+/** 卡片 token → 会话 id。 */
+const cardOwners = new Map();
+
+/** 上限；超过后按插入顺序淘汰最旧的（Map 保持插入序）。 */
+const MAX_CARD_TOKENS = 2000;
+
+/**
+ * 登记一张卡片的归属会话。
+ * @param {string} sessionId
+ * @returns {string} 不透明 token
+ */
+function issueCardToken(sessionId) {
+  const token = `tc_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+  cardOwners.set(token, sessionId);
+  while (cardOwners.size > MAX_CARD_TOKENS) {
+    const oldest = cardOwners.keys().next();
+    if (oldest.done) break;
+    cardOwners.delete(oldest.value);
+  }
+  return token;
+}
+
+/**
+ * 由 token 反查归属会话。
+ * @param {unknown} token
+ * @returns {string | undefined}
+ */
+function resolveCardOwner(token) {
+  if (typeof token !== 'string' || token === '') return undefined;
+  return cardOwners.get(token);
+}
+
+/* ------------------------------------------------------------------ *
+ * 卡片状态
+ *
+ * 卡片是「最终输出」节点，会话切换 / 历史回看都会重新挂载；
+ * 没有服务端状态时，用户拖好的参数会瞬间回到初始值。
+ *
+ * 存在进程内 Map（按 cardToken 分键），不写进会话日志：
+ * 拖动是交互过程而非对话事实，写日志会让上下文被高频记录污染。
+ *
+ * 与 cardOwners 一样用 LRU 上限；token 失效时状态一并删除。
+ * ------------------------------------------------------------------ */
+
+/** 卡片 token → 该卡片的状态快照。 */
+const cardStates = new Map();
+
+/** 状态条数上限。 */
+const MAX_CARD_STATES = 2000;
+
+/** 单份状态的 JSON 上限（规范 §8：数值输入要限额）。 */
+const MAX_STATE_BYTES = 16 * 1024;
+
+/**
+ * 保存一份卡片状态。
+ * @param {string} token
+ * @param {unknown} state
+ * @returns {boolean} 是否接受
+ */
+function saveCardState(token, state) {
+  if (state === null || typeof state !== 'object' || Array.isArray(state)) return false;
+  let serialized;
+  try {
+    serialized = JSON.stringify(state);
+  } catch {
+    return false;
+  }
+  if (typeof serialized !== 'string' || serialized.length > MAX_STATE_BYTES) return false;
+
+  // 重新插入以刷新 LRU 顺序
+  cardStates.delete(token);
+  cardStates.set(token, state);
+  while (cardStates.size > MAX_CARD_STATES) {
+    const oldest = cardStates.keys().next();
+    if (oldest.done) break;
+    cardStates.delete(oldest.value);
+  }
+  return true;
+}
+
+/**
+ * 读回一份卡片状态。
+ * @param {string} token
+ * @returns {unknown | null}
+ */
+function loadCardState(token) {
+  if (!cardStates.has(token)) return null;
+  const state = cardStates.get(token);
+  // LRU 刷新
+  cardStates.delete(token);
+  cardStates.set(token, state);
+  return state;
 }
 
 /** 读请求体，带大小上限。 */
@@ -143,6 +256,10 @@ export function apply(ctx, config = {}) {
           ok: { type: 'boolean' },
           ui: { type: 'object' },
           error: { type: 'string' },
+          // 宿主签发的卡片凭证：客户端动作回传时只认它，不认自报的 sessionId
+          cardToken: { type: 'string' },
+          // 拿不到会话归属时置 true：卡片可见但提交按钮不可用
+          readonly: { type: 'boolean' },
         },
         required: ['ok'],
       },
@@ -165,24 +282,39 @@ export function apply(ctx, config = {}) {
         ];
       },
 
-      /** 客户端从 tool/result 的 meta 读完整 UI。 */
+      /** 客户端从 tool/result 的 meta 读完整 UI 与卡片凭证。 */
       presentationMeta(args, value) {
         if (!value.ok) return { kind: 'chat-ui/1.0', error: value.error ?? 'unknown' };
         return {
           kind: 'chat-ui/1.0',
           title: typeof args.title === 'string' ? args.title : '',
           ui: value.ui,
+          // 凭证随 meta 下发；它是客户端回传动作的唯一凭据。
+          ...(typeof value.cardToken === 'string' ? { cardToken: value.cardToken } : {}),
+          ...(value.readonly === true ? { readonly: true } : {}),
         };
       },
     },
 
-    async execute(args) {
+    /**
+     * 校验 + 签发卡片凭证。
+     *
+     * `exec.agent.id` 就是这张卡片所属的会话，**由宿主在执行时确定**，
+     * 客户端无法伪造。凭证随结果返回，客户端只能拿着它回传动作。
+     */
+    async execute(args, exec) {
       if (args?.title !== undefined && (typeof args.title !== 'string' || args.title.length > MAX_TITLE_CHARS)) {
         return { ok: false, error: `title must be a string of at most ${MAX_TITLE_CHARS} characters` };
       }
       const result = validateUi(args?.ui);
       if (!result.ok) return { ok: false, error: result.error };
-      return { ok: true, ui: result.ui };
+
+      const sessionId = typeof exec?.agent?.id === 'string' ? exec.agent.id : undefined;
+      if (sessionId === undefined) {
+        // 拿不到会话就无法安全地归属动作；宁可让卡片只读，也不猜一个目标。
+        return { ok: true, ui: result.ui, readonly: true };
+      }
+      return { ok: true, ui: result.ui, cardToken: issueCardToken(sessionId) };
     },
 
     isConcurrencySafe: () => true,
@@ -266,11 +398,19 @@ export function apply(ctx, config = {}) {
           return;
         }
 
+        // 只认宿主签发的卡片凭证。请求体里的 sessionId **一律忽略**：
+        // 那是客户端可伪造的字段，信它等于允许跨会话注入消息。
+        const ownerSessionId = resolveCardOwner(body?.cardToken);
+        if (ownerSessionId === undefined) {
+          sendJson(res, 403, { ok: false, error: 'unknown or expired card token' });
+          return;
+        }
+
         const agents = ctx.get('agents');
-        const sessionId = typeof body.sessionId === 'string' ? body.sessionId : '';
-        const agent = sessionId === '' ? agents?.currentInitiator?.() : agents?.get?.(sessionId);
+        // 只认凭证里的会话；body.sessionId 是客户端可伪造字段，绝不使用。
+        const agent = agents?.get?.(ownerSessionId);
         if (!agent) {
-          sendJson(res, 409, { ok: false, error: 'no live agent for this session' });
+          sendJson(res, 409, { ok: false, error: 'the card owner session is no longer live' });
           return;
         }
 
@@ -294,4 +434,81 @@ export function apply(ctx, config = {}) {
       },
     });
   }, 'dsh-tool-cards: card action route');
+
+  /* ---------------- 卡片状态路由 ---------------- */
+
+  ctx.effect(() => {
+    const webServer = ctx.get('webServer');
+    if (!webServer) return () => {};
+
+    const connection = ctx.get('connection');
+    // 与 action 路由同一口径：没有同源围栏就不放行，而不是默认信任。
+    const hasOriginGuard = typeof connection?.requestRejection === 'function';
+    const allowed = (req) => hasOriginGuard && connection.requestRejection(req) === undefined;
+
+    return webServer.register({
+      kind: 'exact',
+      path: STATE_PATH,
+      handler: async (req, res) => {
+        if (!hasOriginGuard) {
+          sendJson(res, 503, { ok: false, error: 'same-origin guard unavailable' });
+          return;
+        }
+        if (!allowed(req)) {
+          sendJson(res, 403, { ok: false, error: 'forbidden' });
+          return;
+        }
+
+        // 读：GET ?cardToken=...
+        if (req.method === 'GET') {
+          let token;
+          try {
+            token = new URL(req.url ?? '/', 'http://dsh.internal').searchParams.get('cardToken') ?? '';
+          } catch {
+            token = '';
+          }
+          if (resolveCardOwner(token) === undefined) {
+            sendJson(res, 403, { ok: false, error: 'unknown or expired card token' });
+            return;
+          }
+          sendJson(res, 200, { ok: true, state: loadCardState(token) });
+          return;
+        }
+
+        // 写：POST { cardToken, state }
+        if (req.method !== 'POST') {
+          sendJson(res, 405, { ok: false, error: 'method not allowed' });
+          return;
+        }
+        // 与 action 路由同一口径：只收 JSON。
+        const contentType = req.headers?.['content-type'];
+        if (typeof contentType !== 'string' || !contentType.toLowerCase().startsWith('application/json')) {
+          sendJson(res, 415, { ok: false, error: 'application/json required' });
+          return;
+        }
+
+        let body;
+        try {
+          body = await readJsonBody(req);
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: error instanceof Error ? error.message : 'bad request' });
+          return;
+        }
+        if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+          sendJson(res, 400, { ok: false, error: 'JSON body must be an object' });
+          return;
+        }
+
+        if (resolveCardOwner(body?.cardToken) === undefined) {
+          sendJson(res, 403, { ok: false, error: 'unknown or expired card token' });
+          return;
+        }
+        if (!saveCardState(body.cardToken, body?.state)) {
+          sendJson(res, 400, { ok: false, error: 'state must be a JSON object within the size limit' });
+          return;
+        }
+        sendJson(res, 200, { ok: true });
+      },
+    });
+  }, 'dsh-tool-cards: card state route');
 }

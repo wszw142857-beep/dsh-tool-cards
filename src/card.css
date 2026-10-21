@@ -198,6 +198,35 @@
 .cui-alert-danger .cui-alert-icon { color: var(--dsw-alias-state-error-primary); }
 .cui-alert-success .cui-alert-icon { color: var(--dsw-alias-state-success-primary); }
 
+/* 卡片渲染失败时的降级卡：说明 + 可折叠详情 + 重试 */
+.cui-card-error {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.cui-card-error .cui-alert-body { flex: 1 1 240px; gap: 4px; }
+.cui-card-error .cui-button { flex: none; }
+.cui-card-error-details { margin-top: 4px; }
+.cui-card-error-details summary {
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--dsw-alias-label-secondary);
+}
+.cui-card-error-message {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-layer-2, var(--dsw-alias-bg-layer-1));
+  border: 1px solid var(--dsw-alias-border-l1);
+  font: 11.5px/1.5 ui-monospace, "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--dsw-alias-label-secondary);
+}
+
 .cui-table-wrap { overflow: auto; border: 1px solid var(--dsw-alias-border-l1); border-radius: 8px; }
 .cui-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
 .cui-table th, .cui-table td {

@@ -43,6 +43,7 @@ import {
   KeyValue,
 } from './components/containers.js';
 import { Chart, MapView } from './components/visuals.js';
+import { t, makeUseT } from '../i18n.js';
 
 /** 组件实现表；键必须与 catalog 的组件名逐字一致。 */
 export const implementations = {
@@ -105,7 +106,7 @@ function Unsupported({ element }) {
   return React.createElement(
     'div',
     { className: 'cui-alert cui-alert-warn', role: 'status' },
-    `暂不支持该控件：${element?.type ?? '未知'}`,
+    t('notSupported', { type: element?.type ?? '?' }),
   );
 }
 

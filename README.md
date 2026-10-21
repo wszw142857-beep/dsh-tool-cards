@@ -154,8 +154,8 @@ model calls chat_ui({ title, ui })
   → tool result meta carries { kind: 'chat-ui/1.0', title, ui }
   → the card is promoted to final chat output (not folded into the tool process)
       dragging / checking / typing → local state only, zero requests
-      pressing the submit button  → POST /chat-ui/action { actionId, operation, values }
-  → host turns it into a user message via agent.followup()
+      pressing the submit button  → POST /chat-ui/action { cardToken, actionId, operation, values }
+  → host resolves the card token to its owning session, then agent.followup()
   → the agent sees the parameter snapshot on its next turn
 ```
 
@@ -169,7 +169,25 @@ output stream. The tool row degrades to a one-line placeholder plus a raw-data d
 If `uiConversation` is unavailable, the plugin falls back to rendering the card inside the tool row,
 so the feature still works.
 
+<<<<<<< HEAD
 ### Components
+=======
+### Action ownership (security)
+
+The client **never** says which session an action belongs to. At execute time the host records
+`card → session` and hands the client an opaque `cardToken` through `presentationMeta`; the action
+route accepts only that token and ignores any `sessionId` in the request body.
+
+An earlier version trusted `body.sessionId` and resolved it with `agents.get()`, which let any
+same-origin page inject a user message into *any* session. `tools/security-test.mjs` now pins the
+behavior: forged `sessionId` → 403, unknown token → 403, valid token + forged session → routed to
+the token's own session, released session → 409.
+
+If the host cannot determine the owner session, the tool issues no token and the card renders
+read-only — it never guesses a target.
+
+## Components
+>>>>>>> 0b92eff (feat: 0.2.0 — state persistence, error isolation, i18n)
 
 26 registered component types:
 
@@ -261,14 +279,47 @@ Enforced on the host, so a malformed payload is rejected before it reaches the c
   and `zod`, because those are not on the platform module baseline.
 - Styling uses only `--dsw-alias-*` theme tokens, so it follows light/dark automatically.
 
+<<<<<<< HEAD
 ### Development
+=======
+### Failure isolation
+
+Card content is model-generated, so any single card can be malformed. Every render entry
+(`ChatUiNode`, `ChatUiToolRow`, `ChatUiToolRowFallback`) is wrapped in a class-based
+`CardErrorBoundary`: a broken card degrades into a small error card — cause, collapsible details,
+and a retry button — while the rest of the conversation keeps rendering. Without it, one bad card
+would crash the whole slot entry and take the transcript with it.
+
+Missing node data is not an error: `node=null` or `data=null` renders nothing.
+
+### Card state
+
+Sliders and inputs keep their values across session switches, history navigation and remounts.
+State is stored per card on the host (`GET/POST /chat-ui/state`, keyed by the card token) with
+`localStorage` as a fallback; writes are debounced at 400 ms so dragging does not spam the route.
+
+It deliberately does **not** go into the session log: dragging a slider is interaction, not a
+conversation fact, and logging every tick would pollute the model's context.
+
+### Interface language
+
+Card chrome — submit, close, retry, empty states, validation messages, the map disclaimer —
+follows `ctx.locale` and updates live when the language changes. Business copy (card titles,
+field labels) is authored by the model in the conversation's language and is never translated.
+
+## Development
+>>>>>>> 0b92eff (feat: 0.2.0 — state persistence, error isolation, i18n)
 
 ```bash
 git clone https://github.com/wszw142857-beep/dsh-tool-cards
 cd dsh-tool-cards
 npm install
-npm run build     # regenerate src/card-css.js and lib/client.js
-npm run check     # protocol + bundle self-tests
+npm run build             # regenerate src/card-css.js and lib/client.js
+npm run check             # protocol + bundle self-tests (16)
+npm run check:security    # action-ownership / privilege escalation (11)
+npm run check:boundary    # render failure isolation (9)
+npm run check:v020        # state persistence, i18n, isolation (12)
+node tools/e2e-full.mjs   # full chain, needs jsdom
 ```
 
 Additional harnesses live in `tools/` (not shipped in the npm tarball):

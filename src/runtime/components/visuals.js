@@ -14,8 +14,11 @@
  * @module chat-ui-demo/components/visuals
  */
 import React from 'react';
+import { t, makeUseT } from '../../i18n.js';
 
 const h = React.createElement;
+/** 语言变化时自动重渲染的翻译函数。 */
+const useT = makeUseT(React);
 
 const WIDTH = 560;
 const DEFAULT_HEIGHT = 220;
@@ -90,6 +93,7 @@ function useClipId() {
 
 /** 14 图表：柱状 / 折线 / 饼图 / 散点；空数据显示空状态。 */
 export function Chart({ element }) {
+  useT();
   const p = element.props ?? {};
   const data = Array.isArray(p.data) ? p.data : [];
   const series = Array.isArray(p.series) && p.series.length > 0 ? p.series : [];
@@ -99,10 +103,10 @@ export function Chart({ element }) {
   const clipId = useClipId();
 
   if (data.length === 0) {
-    return h('div', { className: 'cui-chart cui-chart-empty', role: 'status' }, '暂无数据');
+    return h('div', { className: 'cui-chart cui-chart-empty', role: 'status' }, t('noData'));
   }
   if (series.length === 0) {
-    return h('div', { className: 'cui-chart cui-chart-empty', role: 'status' }, '图表缺少 series 定义');
+    return h('div', { className: 'cui-chart cui-chart-empty', role: 'status' }, t('chartNoSeries'));
   }
 
   if (chartType === 'pie') {
@@ -134,7 +138,7 @@ export function Chart({ element }) {
       p.label ? h('figcaption', { className: 'cui-chart-title' }, p.label) : null,
       h(
         'svg',
-        { viewBox: `0 0 ${WIDTH} ${height}`, role: 'img', 'aria-label': p.label ?? '饼图' },
+        { viewBox: `0 0 ${WIDTH} ${height}`, role: 'img', 'aria-label': p.label ?? 'pie' },
         arcs.map((arc) =>
           h('path', {
             key: arc.index,
@@ -316,6 +320,7 @@ export function Chart({ element }) {
  * 有 center/markers 时画一个等距投影的简易散点地图（不承诺真实地理精度）。
  */
 export function MapView({ element }) {
+  useT();
   const p = element.props ?? {};
   const markers = Array.isArray(p.markers) ? p.markers : [];
   const [selected, setSelected] = React.useState(null);
@@ -330,7 +335,7 @@ export function MapView({ element }) {
     return h(
       'div',
       { className: 'cui-map cui-map-fallback', role: 'status' },
-      h('div', { className: 'cui-hint' }, p.unavailableReason ?? '坐标缺失，已降级为点位列表'),
+      h('div', { className: 'cui-hint' }, p.unavailableReason ?? t('mapNoCoords')),
       h(
         'ul',
         { className: 'cui-map-list' },
@@ -359,7 +364,7 @@ export function MapView({ element }) {
     p.label ? h('figcaption', { className: 'cui-chart-title' }, p.label) : null,
     h(
       'svg',
-      { viewBox: `0 0 ${WIDTH} ${DEFAULT_HEIGHT}`, role: 'img', 'aria-label': p.label ?? '点位图' },
+      { viewBox: `0 0 ${WIDTH} ${DEFAULT_HEIGHT}`, role: 'img', 'aria-label': p.label ?? 'map' },
       h('rect', { x: 0, y: 0, width: WIDTH, height: DEFAULT_HEIGHT, rx: 10, className: 'cui-map-bg' }),
       markers.map((marker) => {
         const { x, y } = project(marker);
@@ -382,6 +387,6 @@ export function MapView({ element }) {
         h('li', { key: marker.id, 'aria-current': selected === marker.id }, marker.label ?? marker.id),
       ),
     ),
-    h('div', { className: 'cui-hint' }, '未接入瓦片服务：坐标仅做等距投影示意，不用于路线或距离计算。'),
+    h('div', { className: 'cui-hint' }, t('mapDisclaimer')),
   );
 }

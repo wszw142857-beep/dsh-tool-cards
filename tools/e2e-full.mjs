@@ -50,9 +50,14 @@ assert.equal(definition.name, 'chat_ui');
 
 const sample = JSON.parse(readFileSync(join(root, 'tools/sample-args.json'), 'utf8'));
 
-const value = await definition.execute({ title: sample.title, ui: sample.ui });
+// 会话归属由宿主在执行时确定，因此这里必须传 exec.agent。
+const value = await definition.execute(
+  { title: sample.title, ui: sample.ui },
+  { agent: { id: 'session-e2e' } },
+);
 console.log('tool execute →', JSON.stringify(value).slice(0, 80), '…');
 assert.equal(value.ok, true, `execute rejected: ${value.error}`);
+assert.equal(typeof value.cardToken, 'string', 'execute must issue a card token');
 
 const rendered = definition.output.render({ title: sample.title }, value);
 assert.equal(rendered[0].type, 'text');
@@ -171,10 +176,8 @@ console.log('node.kind:', viewNode.kind, '| visibility:', viewNode.visibility, '
 
 await act(async () => {
   reactRoot.render(
-    React.createElement(clientExports.ChatUiNode, {
-      node: viewNode,
-      sessionId: 'session-1',
-    }),
+    // 卡片节点不再接收 sessionId：动作归属由 meta.cardToken 决定。
+    React.createElement(clientExports.ChatUiNode, { node: viewNode }),
   );
 });
 
@@ -232,7 +235,10 @@ console.log('url:', post.url);
 console.log('body:', JSON.stringify(post.body));
 
 assert.equal(post.url, '/chat-ui/action');
-assert.equal(post.body.sessionId, 'session-1');
+// 安全模型：只发宿主签发的 cardToken，不发 sessionId。
+assert.equal(typeof post.body.cardToken, 'string', 'payload must carry the host-issued cardToken');
+assert.equal(post.body.cardToken, value.cardToken, 'cardToken must be the one issued at execute time');
+assert.ok(!('sessionId' in post.body), 'payload must NOT carry a client-supplied sessionId');
 assert.equal(post.body.actionId, 'analyseDose');
 assert.equal(post.body.operation, 'analyse-remediation-dose');
 assert.deepEqual(Object.keys(post.body.values).sort(), ['doseGPerKg', 'soilTons', 'tech']);

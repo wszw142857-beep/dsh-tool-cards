@@ -9,11 +9,14 @@
  * @module chat-ui-demo/components/inputs
  */
 import React from 'react';
-import { useBoundProp } from '@json-render/react';
+import { useBoundProp } from '../use-bound-prop.js';
 import { useRequiredField } from '../validation.js';
 import { Spinner } from './icons.js';
+import { t, makeUseT } from '../../i18n.js';
 
 const h = React.createElement;
+/** 语言变化时自动重渲染的翻译函数。 */
+const useT = makeUseT(React);
 
 /** 控件外壳：label + 控件 + 单位/提示。 */
 export function Field({ label, hint, error, htmlFor, children }) {
@@ -46,7 +49,7 @@ export function Slider({ element, bindings }) {
 
   return h(
     Field,
-    { label: p.label, hint: p.unit ? `单位 ${p.unit}` : undefined, htmlFor: id },
+    { label: p.label, hint: p.unit ? t('unit', { unit: p.unit }) : undefined, htmlFor: id },
     h(
       'div',
       { className: 'cui-slider' },
@@ -69,7 +72,7 @@ export function Slider({ element, bindings }) {
         step,
         value: Number.isFinite(current) ? current : min,
         disabled,
-        'aria-label': `${p.label} 精确值`,
+        'aria-label': `${p.label} — ${t('submit')}`,
         onChange: (event) => {
           const raw = event.target.value;
           if (raw === '') return;
@@ -219,7 +222,7 @@ export function Input({ element, bindings }) {
   const requiredError = useRequiredField(
     p.required === true ? boundKey : '',
     () => String(value ?? '').trim() === '',
-    `${p.label ?? '该项'}不能为空`,
+    t('requiredField', { label: p.label ?? '' }),
   );
 
   return h(
@@ -253,11 +256,11 @@ export function Textarea({ element, bindings }) {
   const requiredError = useRequiredField(
     p.required === true ? boundKey : '',
     () => String(value ?? '').trim() === '',
-    `${p.label ?? '该项'}不能为空`,
+    t('requiredField', { label: p.label ?? '' }),
   );
   return h(
     Field,
-    { label: p.label, hint: p.maxLength ? `最多 ${p.maxLength} 字` : undefined, error: requiredError },
+    { label: p.label, hint: p.maxLength ? t('maxChars', { n: p.maxLength }) : undefined, error: requiredError },
     h('textarea', {
       className: `cui-control cui-textarea${requiredError ? ' cui-invalid' : ''}`,
       rows: p.rows ?? 3,
@@ -295,6 +298,8 @@ export function DateField({ element, bindings }) {
 
 /** 09 按钮：本地状态 vs 宿主动作分开；提交中防连击。 */
 export function Button({ element, emit, on }) {
+  // 订阅语言：卡片骨架文案随语言切换即时更新。
+  const tt = useT();
   const p = element.props ?? {};
   const [busy, setBusy] = React.useState(false);
   const [error, setError] = React.useState(null);
@@ -306,7 +311,7 @@ export function Button({ element, emit, on }) {
   const click = async () => {
     if (inFlight.current || p.disabled === true) return;
     if (handler.bound === false) {
-      setError('该按钮未绑定动作');
+      setError(tt('actionUnbound'));
       return;
     }
     inFlight.current = true;

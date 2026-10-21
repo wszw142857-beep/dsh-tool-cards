@@ -15,8 +15,11 @@ import { createStateStore } from '@json-render/core';
 import { compileMessage, normalizeActions, expressionFunctions, buildActionEvent } from './protocol/chatui.js';
 import { registry, Unsupported } from './registry.js';
 import { ValidationRegistryProvider, useValidationRegistry } from './validation.js';
+import { t, makeUseT } from '../i18n.js';
 
 const h = React.createElement;
+/** 语言变化时自动重渲染的翻译函数。 */
+const useT = makeUseT(React);
 
 /**
  * 渲染一条 chat-ui/1.0 消息。
@@ -45,6 +48,19 @@ export function MessageCard({ message, onHostAction, onStatePersist, initialRunt
   }
   const store = storeRef.current;
 
+  // 宿主读回的状态是**异步**到达的（要先请求 /chat-ui/state）。
+  // 到达时 store 已经用 initialState 建好了，必须把值合并进去，
+  // 否则「切走再回来」看到的永远是初始值。
+  const appliedRestore = React.useRef(initialRuntimeState ?? null);
+  React.useEffect(() => {
+    if (initialRuntimeState === undefined || initialRuntimeState === null) return;
+    if (appliedRestore.current === initialRuntimeState) return;
+    appliedRestore.current = initialRuntimeState;
+    for (const [key, value] of Object.entries(initialRuntimeState)) {
+      if (store.get(`/${key}`) !== value) store.set(`/${key}`, value);
+    }
+  }, [initialRuntimeState, store]);
+
   // controlled 模式下订阅 store，把整份快照交给宿主持久化。
   React.useEffect(() => {
     if (!onStatePersist) return undefined;
@@ -67,7 +83,7 @@ function Inner({ compiled, message, store, onHostAction }) {
   const handlers = React.useMemo(() => {
     const make = (actionId) => async () => {
       const action = compiled.actionsTable[actionId];
-      if (!action) throw new Error(`未登记的动作：${actionId}`);
+      if (!action) throw new Error(t('unknownAction', { action: actionId }));
 
       if (action.kind === 'openUrl') {
         window.open(action.url, '_blank', 'noopener,noreferrer');
@@ -76,7 +92,7 @@ function Inner({ compiled, message, store, onHostAction }) {
 
       // 规范 T05：必填项不过 → 只显示字段错误，绝不触发远端。
       if (validation && !validation.validateAll()) {
-        throw new Error('请先补全标红的必填项');
+        throw new Error(t('submitBlocked'));
       }
 
       // 只发送白名单键的「验证后快照」。

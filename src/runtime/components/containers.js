@@ -4,13 +4,17 @@
  * @module chat-ui-demo/components/containers
  */
 import React from 'react';
-import { useBoundProp } from '@json-render/react';
+import { useBoundProp } from '../use-bound-prop.js';
 import { ChevronLeft, ChevronRight, ChevronDown, Close, Check, Alert as AlertIcon, Info } from './icons.js';
+import { t, makeUseT } from '../../i18n.js';
 
 const h = React.createElement;
+/** 语言变化时自动重渲染的翻译函数。 */
+const useT = makeUseT(React);
 
 /** 10 表单：子控件组合 + 必填校验 + 提交按钮；校验不过不触发远端。 */
 export function Form({ element, children, emit, on }) {
+  useT();
   const p = element.props ?? {};
   const [error, setError] = React.useState(null);
   const handler = on ? on('click') : { bound: false };
@@ -42,7 +46,7 @@ export function Form({ element, children, emit, on }) {
           className: 'cui-button cui-button-primary',
           disabled: p.disabled === true,
         },
-        p.submitLabel ?? '提交',
+        p.submitLabel ?? t('submit'),
       ),
     ),
   );
@@ -78,6 +82,7 @@ export function Pressable({ element, children, emit, on }) {
 
 /** 12 弹出层：点击打开、Escape 关闭、焦点回到触发器。 */
 export function Popover({ element, children }) {
+  useT();
   const p = element.props ?? {};
   const [open, setOpen] = React.useState(false);
   const triggerRef = React.useRef(null);
@@ -135,6 +140,7 @@ export function Popover({ element, children }) {
 
 /** 13 轮播：左右操作 + 键盘导航 + 索引与状态同步。 */
 export function Carousel({ element, bindings }) {
+  useT();
   const p = element.props ?? {};
   const items = p.items ?? [];
   const [rawIndex, setIndex] = useBoundProp(Number(p.activeIndex ?? 0), bindings?.value);
@@ -154,8 +160,8 @@ export function Carousel({ element, bindings }) {
       className: 'cui-carousel',
       tabIndex: 0,
       role: 'group',
-      'aria-roledescription': '轮播',
-      'aria-label': p.items?.[0]?.title ?? '轮播',
+      'aria-roledescription': 'carousel',
+      'aria-label': p.items?.[0]?.title ?? 'carousel',
       onKeyDown: (event) => {
         if (event.key === 'ArrowLeft') {
           event.preventDefault();
@@ -175,19 +181,19 @@ export function Carousel({ element, bindings }) {
         {
           type: 'button',
           className: 'cui-icon-button',
-          'aria-label': '上一项',
+          'aria-label': t('preview'),
           disabled: p.loop === false && index === 0,
           onClick: () => move(-1),
         },
         h(ChevronLeft),
       ),
-      h('span', { className: 'cui-hint cui-carousel-counter' }, `${index + 1} / ${items.length}`),
+      h('span', { className: 'cui-hint cui-carousel-counter' }, t('carouselOf', { index: index + 1, total: items.length })),
       h(
         'button',
         {
           type: 'button',
           className: 'cui-icon-button',
-          'aria-label': '下一项',
+          'aria-label': t('next'),
           disabled: p.loop === false && index === items.length - 1,
           onClick: () => move(1),
         },
@@ -306,6 +312,7 @@ export function Badge({ element }) {
 }
 
 export function Alert({ element }) {
+  useT();
   const p = element.props ?? {};
   const tone = p.tone ?? 'info';
   const glyph =
@@ -324,10 +331,11 @@ export function Alert({ element }) {
 }
 
 export function Table({ element }) {
+  useT();
   const p = element.props ?? {};
   const columns = p.columns ?? [];
   const rows = p.rows ?? [];
-  if (columns.length === 0) return h(Alert, { element: { props: { text: '表格缺少列定义', tone: 'warn' } } });
+  if (columns.length === 0) return h(Alert, { element: { props: { text: t('tableNoColumns'), tone: 'warn' } } });
   return h(
     'div',
     { className: 'cui-table-wrap' },

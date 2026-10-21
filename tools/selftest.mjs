@@ -256,6 +256,34 @@ test('卡片文案不得出现“让 AI”式措辞（由运行时模型按任�
   assert.ok(/不要出现/.test(host) || /不要写/.test(host), 'tool description must state the wording rule');
 });
 
+test('动作路由不信任客户端自报的 sessionId（越权防护）', () => {
+  const host = readFileSync(join(root, 'host.js'), 'utf8');
+  const code = host
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('/*') && !line.trim().startsWith('//'))
+    .join('\n');
+
+  // 1. 不得从请求体读 sessionId 并据此解析 agent
+  assert.ok(
+    !/agents\?\.get\?\.\(sessionId\)/.test(code),
+    'route must not resolve an agent from a client-supplied sessionId',
+  );
+  assert.ok(
+    !/body\?\.sessionId/.test(code),
+    'route must not read body.sessionId at all',
+  );
+  // 2. 必须走宿主签发的卡片凭证
+  assert.ok(/resolveCardOwner\(/.test(code), 'route must resolve the owner via cardToken');
+  assert.ok(/issueCardToken\(/.test(code), 'tool execute must issue a card token');
+  // 3. 客户端绝不能发送 sessionId
+  const client = readFileSync(join(root, 'src/client.js'), 'utf8');
+  const clientCode = client
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('/*') && !line.trim().startsWith('//'))
+    .join('\n');
+  assert.ok(!/sessionId/.test(clientCode), 'client must not send sessionId');
+});
+
 test('客户端不读取 ctx.styles（静态插件的 ctx 没有该服务）', () => {
   const source = readFileSync(join(root, 'src/client.js'), 'utf8');
   // 允许出现在 JSDoc 里，但不允许出现在可执行代码里
@@ -264,8 +292,7 @@ test('客户端不读取 ctx.styles（静态插件的 ctx 没有该服务）', (
     .filter((line) => !line.trim().startsWith('*') && !line.trim().startsWith('/*') && !line.trim().startsWith('//'))
     .join('\n');
   assert.ok(!/ctx\s*\.\s*styles/.test(code), 'src/client.js must not read ctx.styles');
-  assert.ok(!/ctx\s*\.\s*styles/.test(readFileSync(join(root, 'lib/client.js'), 'utf8')
-    .replace(/"[^"]*ctx\.styles[^"]*"/g, '')), 'bundle must not read ctx.styles');
+  assert.ok(!/ctx\s*\.\s*styles/.test(readFileSync(join(root, 'lib/client.js'), 'utf8')    .replace(/"[^"]*ctx\.styles[^"]*"/g, '')), 'bundle must not read ctx.styles');
 });
 
 test('客户端上报体必须带 operation（宿主靠它映射能力）', () => {

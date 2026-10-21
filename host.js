@@ -324,25 +324,56 @@ export function apply(ctx, config = {}) {
 
   /* ---------------- 系统提示：让模型在合适时机自己想起这个工具 ---------------- */
 
-  ctx.effect(() => {
-    const systemPrompt = ctx.get('systemPrompt');
-    if (!systemPrompt) return () => {};
-    return systemPrompt.section({
-      name: 'chat-ui:cards',
-      order: 620,
-      text:
-        '当用户正在调参数、做取舍，或某个结论依赖他自己可调的输入时，' +
-        '优先用 `chat_ui` 工具把参数做成可交互卡片，而不是只用文字罗列数字。' +
-        '典型触发：投加量/配比/阈值/预算/评分这类可调数值、需要用户先选口径才能继续、' +
-        '多维数据对比（图表优于长表格）、用户说“做个计算器/面板/调一下看看”。' +
-        '不需要时不套卡片：纯解释、一次性结论、没有可调输入的回答直接写正文。' +
-        '卡片里的控件只在本地联动不消耗 token；需要用户确认后再继续的动作，' +
-        '必须给一个 Button 并在 actions 里登记，用户点了才会带着参数快照回来。' +
-        '卡片文案按当前任务由你自己起：按钮写用户的下一个动作（如“应用这组参数”“计算推荐投加量”），' +
-        '不要出现“让 AI”“AI 分析”“问模型”或“本地计算/不请求大模型”这类词——' +
-        '用户看到的是产品界面，不是你和他之间的技术说明。',
+  /**
+   * 提示段文本。抽成常量，便于测试断言与复用。
+   * 这段文本是「模型会不会主动用这个工具」的主要依据之一，
+   * 改动前请先看 tools/diag-prompt.mjs 的说明。
+   */
+  const PROMPT_SECTION_TEXT =
+    '当用户正在调参数、做取舍，或某个结论依赖他自己可调的输入时，' +
+    '优先用 `chat_ui` 工具把参数做成可交互卡片，而不是只用文字罗列数字。' +
+    '典型触发：投加量/配比/阈值/预算/评分这类可调数值、需要用户先选口径才能继续、' +
+    '多维数据对比（图表优于长表格）、用户说“做个计算器/面板/调一下看看”。' +
+    '不需要时不套卡片：纯解释、一次性结论、没有可调输入的回答直接写正文。' +
+    '卡片里的控件只在本地联动不消耗 token；需要用户确认后再继续的动作，' +
+    '必须给一个 Button 并在 actions 里登记，用户点了才会带着参数快照回来。' +
+    '卡片文案按当前任务由你自己起：按钮写用户的下一个动作（如“应用这组参数”“计算推荐投加量”），' +
+    '不要出现“让 AI”“AI 分析”“问模型”或“本地计算/不请求大模型”这类词——' +
+    '用户看到的是产品界面，不是你和他之间的技术说明。';
+
+  // 用 ctx.inject 而不是一次性 ctx.get：
+  // systemPrompt 是可选服务，若插件先于它激活，一次性 get 会拿到 undefined，
+  // 提示段就**永久丢失且没有任何报错**（实测确认）。
+  // ctx.inject 是反应式的：服务一就绪就调用回调，插件卸载时自动撤销。
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['systemPrompt'], (owner) => {
+      try {
+        owner.effect(
+          () =>
+            owner.get('systemPrompt').section({
+              name: 'chat-ui:cards',
+              order: 620,
+              text: PROMPT_SECTION_TEXT,
+            }),
+          'dsh-tool-cards: prompt section',
+        );
+      } catch (error) {
+        // 注册失败不能拖垮插件：工具本身仍然可用。
+        ctx.logger?.('dsh-tool-cards')?.warn?.(`prompt section unavailable: ${String(error)}`);
+      }
     });
-  }, 'dsh-tool-cards: prompt section');
+  } else {
+    // 极老的 Host 没有 ctx.inject：退回一次性 get。
+    ctx.effect(() => {
+      const systemPrompt = ctx.get('systemPrompt');
+      if (!systemPrompt) return () => {};
+      return systemPrompt.section({
+        name: 'chat-ui:cards',
+        order: 620,
+        text: PROMPT_SECTION_TEXT,
+      });
+    }, 'dsh-tool-cards: prompt section');
+  }
 
   /* ---------------- 动作上报路由 ---------------- */
 

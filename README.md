@@ -319,6 +319,9 @@ npm run check             # protocol + bundle self-tests (16)
 npm run check:security    # action-ownership / privilege escalation (11)
 npm run check:boundary    # render failure isolation (9)
 npm run check:v020        # state persistence, i18n, isolation (12)
+npm run check:v020        # (already listed above)
+npm run check:overflow    # control widths do not exceed their container (8)
+npm run check:prompt      # prompt section registers in both activation orders (7)
 node tools/e2e-full.mjs   # full chain, needs jsdom
 ```
 

@@ -33,8 +33,19 @@
 .cui-error { font-size: 12px; color: var(--dsw-alias-state-error-primary); }
 .cui-control.cui-invalid { border-color: var(--dsw-alias-state-error-primary); }
 
+/* 所有卡片内元素都用 border-box：
+   width:100% 的控件若用默认的 content-box，padding 与 border 会额外撑出容器，
+   textarea 尤其明显（右侧越界、贴边滚动条被裁掉）。 */
+.cui-chat-card,
+.cui-chat-card *,
+.cui-message-ui,
+.cui-message-ui * {
+  box-sizing: border-box;
+}
+
 .cui-control {
   width: 100%;
+  max-width: 100%;
   padding: 7px 10px;
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-bg-layer-1, var(--dsw-alias-bg-base));
@@ -48,7 +59,14 @@
   border-color: var(--dsw-alias-brand-primary);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand-primary) 18%, transparent);
 }
-.cui-textarea { resize: vertical; min-height: 56px; max-height: 180px; }
+/* textarea 额外约束：默认拖拽手柄会改宽，禁止横向拖拽，避免用户拖出容器。 */
+.cui-textarea {
+  resize: vertical;
+  min-height: 56px;
+  max-height: 180px;
+  display: block;
+  overflow-x: hidden;
+}
 
 .cui-slider { display: flex; align-items: center; gap: 10px; }
 .cui-slider input[type="range"] { flex: 1; accent-color: var(--dsw-alias-brand-primary); min-width: 0; }

@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 This project follows [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-10-21
+
+Two fixes: one visual, one that could silently disable auto-invocation.
+
+### Fixed
+
+- **Controls overflowed their container.** `.cui-control` set `width: 100%` without
+  `box-sizing: border-box`, so `padding` and `border` were added outside the declared width —
+  most visible on the textarea, which extended past the card's right edge. Every element inside
+  a card now uses `border-box`, and the textarea additionally refuses horizontal resizing.
+  Covered by `tools/overflow-test.mjs`, which measures real pixel widths in a browser.
+- **The system-prompt section could be skipped silently.** The section was registered with a
+  one-shot `ctx.get('systemPrompt')`; when that optional service activated *after* this plugin,
+  the lookup returned `undefined`, the section was dropped, and nothing was logged. Since that
+  text is half of what tells the model when to reach for `chat_ui`, auto-invocation could quietly
+  weaken. Registration now uses reactive `ctx.inject(['systemPrompt'], …)`, so it happens whenever
+  the service becomes available. `tools/diag-prompt.mjs` pins both activation orders.
+
+### Notes
+
+- Existing installs should restart DSH after upgrading (the client bundle changed).
+
 ## [0.2.0] — 2026-10-21
 
 Three fixes that make the plugin safe and pleasant to use for longer sessions.

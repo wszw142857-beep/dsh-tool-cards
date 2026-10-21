@@ -1,6 +1,6 @@
 {
   "name": "dsh-tool-cards",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "description": "Interactive cards for DeepSeek Harness replies, rendered from a tool result: sliders, selects, forms, charts and tables, with a submit action that flows back to the agent as a real user message.",
   "main": "index.js",
@@ -30,7 +30,9 @@
     "check": "node tools/selftest.mjs",
     "check:security": "node tools/security-test.mjs",
     "check:boundary": "node tools/boundary-test.mjs",
-    "check:v020": "node tools/v020-test.mjs"
+    "check:v020": "node tools/v020-test.mjs",
+    "check:overflow": "node tools/overflow-test.mjs",
+    "check:prompt": "node tools/diag-prompt.mjs"
   },
   "dsh": {
     "bundle": {
